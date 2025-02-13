@@ -7,7 +7,9 @@ import Point from 'https://cdn.skypack.dev/ol/geom/Point.js';
 import VectorSource from 'https://cdn.skypack.dev/ol/source/Vector.js';
 import VectorLayer from 'https://cdn.skypack.dev/ol/layer/Vector.js';
 import { Icon, Style } from 'https://cdn.skypack.dev/ol/style.js';
-import { fromLonLat } from 'https://cdn.skypack.dev/ol/proj.js'; // ✅ Impor yang benar
+import { fromLonLat } from 'https://cdn.skypack.dev/ol/proj.js';
+import Overlay from 'https://cdn.skypack.dev/ol/Overlay.js';
+import { toLonLat } from 'https://cdn.skypack.dev/ol/proj.js';
 
 const map = new Map({
     target: 'map',
@@ -28,52 +30,60 @@ const vectorLayer = new VectorLayer({
 });
 map.addLayer(vectorLayer);
 
-export function getUserLocation() { // ✅ Ekspor fungsi agar bisa diakses dari index.html
+const popupContainer = document.createElement('div');
+popupContainer.id = 'popup';
+popupContainer.style.position = 'absolute';
+popupContainer.style.background = 'white';
+popupContainer.style.padding = '10px';
+popupContainer.style.borderRadius = '5px';
+popupContainer.style.boxShadow = '0 4px 6px rgba(0, 0, 0, 0.1)';
+popupContainer.style.display = 'none';
+document.body.appendChild(popupContainer);
+
+const overlay = new Overlay({
+    element: popupContainer,
+    positioning: 'bottom-center',
+    stopEvent: false,
+});
+map.addOverlay(overlay);
+
+export function getUserLocation() {
     if ("geolocation" in navigator) {
-        navigator.geolocation.getCurrentPosition(
-            async (position) => {
-                const { latitude, longitude } = position.coords;
-                const coords = fromLonLat([longitude, latitude]); // ✅ Gunakan fromLonLat yang benar
+        navigator.geolocation.getCurrentPosition(async (position) => {
+            const { latitude, longitude } = position.coords;
+            const coords = fromLonLat([longitude, latitude]);
 
-                map.getView().setCenter(coords);
-                map.getView().setZoom(15);
+            map.getView().setCenter(coords);
+            map.getView().setZoom(15);
 
-                const userLocation = new Feature({
-                    geometry: new Point(coords),
-                });
+            const userLocation = new Feature({
+                geometry: new Point(coords),
+            });
 
-                userLocation.setStyle(
-                    new Style({
-                        image: new Icon({
-                            src: "https://cdn-icons-png.flaticon.com/512/684/684908.png",
-                            scale: 0.05,
-                        }),
-                    })
-                );
+            userLocation.setStyle(new Style({
+                image: new Icon({
+                    src: "https://cdn-icons-png.flaticon.com/512/684/684908.png",
+                    scale: 0.05,
+                }),
+            }));
 
-                vectorSource.clear();
-                vectorSource.addFeature(userLocation);
+            vectorSource.clear();
+            vectorSource.addFeature(userLocation);
 
-                const locationInfo = await getLocationName(latitude, longitude);
-                document.getElementById("location-info").innerText = locationInfo;
-            },
-            (error) => {
-                console.error("Error mendapatkan lokasi:", error);
-                document.getElementById("location-info").innerText =
-                    "Gagal mendapatkan lokasi.";
-            }
-        );
+            const locationInfo = await getLocationName(latitude, longitude);
+            document.getElementById("location-info").innerText = locationInfo;
+        }, (error) => {
+            console.error("Error mendapatkan lokasi:", error);
+            document.getElementById("location-info").innerText = "Gagal mendapatkan lokasi.";
+        });
     } else {
-        document.getElementById("location-info").innerText =
-            "Geolokasi tidak didukung pada perangkat ini.";
+        document.getElementById("location-info").innerText = "Geolokasi tidak didukung pada perangkat ini.";
     }
 }
 
 async function getLocationName(lat, lon) {
     try {
-        const response = await fetch(
-            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`
-        );
+        const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
         const data = await response.json();
         return data.display_name || "Lokasi tidak ditemukan";
     } catch (error) {
@@ -81,3 +91,13 @@ async function getLocationName(lat, lon) {
         return "Gagal mendapatkan nama lokasi";
     }
 }
+
+map.on('click', async function (event) {
+    const coordinate = event.coordinate;
+    const [lon, lat] = toLonLat(coordinate); // ✅ KONVERSI YANG BENAR
+    const locationInfo = await getLocationName(lat, lon);
+
+    popupContainer.innerHTML = `<strong>Informasi Lokasi:</strong><br>${locationInfo}`;
+    popupContainer.style.display = 'block';
+    overlay.setPosition(coordinate);
+});
